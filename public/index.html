@@ -1,0 +1,122 @@
+<html>
+  <head>
+    <style>
+      body {
+        font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+        font-weight: 300;
+      }
+
+      #messages { width: 100%; height: 200px; overflow: auto; background-color: #EEE; }
+    </style>
+  </head>
+  <body>
+    <label for="message">Send your message: </label>
+    <input type="text" id="message"></input>
+    <button id="send-message">Submit</button>
+    <div id="messages"></div>
+    <div id="flights">
+      <select id="flights-available">
+        <option value="">Loading...</option>
+      </select>
+      <button id="refresh-flights">Refresh all</button>
+      <ul id="flight-details"></ul>
+    </div>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-2.0.3.min.js"></script>
+    <script type="text/javascript">
+      $(document).ready(function(){
+        getWsUrl = function(url){
+          var wsUrl = 'ws://' + window.location.host;
+          return wsUrl + url;
+        };
+
+        appendMessage = function(msg){
+          var data = JSON.parse(msg.data);
+          var p = $('<p>').text(data.message);
+          $('div#messages').append(p).scrollTop(10000);
+        };
+
+        broadcastMessage = function(){
+          var input = $('input#message');
+          var value = input.val();
+          input.val('');
+
+          var ws = new WebSocket(getWsUrl('/wall'));
+          ws.onopen = function(){
+            ws.send(value);
+          };
+        };
+
+        var subscription = new EventSource('/subscribe');
+        subscription.addEventListener('message-received', function(msg){
+          appendMessage(msg);
+        });
+
+        subscription.addEventListener('flights-updated', function(msg){
+          var select = $('select#flights-available');
+          var selected = select.val();
+
+          select.children().remove();
+          select.append(new Option('Select one...', ''));
+
+          flights = JSON.parse(msg.data).flights;
+
+          $.each(flights, function(index, item){
+            var option = new Option();
+            option.text = option.value = item.flight_full_number;
+
+            select.append(option);
+          });
+
+          select.val(selected);
+        });
+
+        $('button#send-message').bind('click', function(){
+          broadcastMessage();
+        });
+
+        $('input#message').bind('keypress', function(e){
+          if (e.which == 13) broadcastMessage();
+        });
+
+        $('select#flights-available').bind('change', function(){
+          var value = $(this).val();
+          if (value == '') return;
+
+          var ws = new WebSocket(getWsUrl('/details'));
+          ws.onopen = function(){
+            ws.send(value);
+          };
+
+          ws.onmessage = function(msg){
+            var details = $('ul#flight-details');
+            details.html('');
+            details.show();
+
+            var values = JSON.parse(msg.data);
+            $.each(values, function(k, v){
+              var li = $('<li>');
+              li.append(k + ': ' + v);
+
+              details.append(li);
+            });
+          };
+        });
+
+        $('button#refresh-flights').bind('click', function(){
+          $('ul#flight-details').children().remove();
+
+          var ws = new WebSocket(getWsUrl('/refresh'));
+
+          ws.onopen = function(){ ws.send('') };
+
+          ws.onmessage = function(msg){
+            var select = $('select#flights-available');
+            select.children().remove();
+            select.append(new Option('Loading...', ''));
+          };
+        });
+      });
+    </script>
+  </body>
+</html>
+
